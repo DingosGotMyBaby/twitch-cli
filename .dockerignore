@@ -1,0 +1,6 @@
+.git
+build
+bin
+.github
+*.db
+*.prof

@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1
+
+# ---------------------------------------
+# Stage 1: Build binary with CGO enabled (required for go-sqlite3)
+# ---------------------------------------
+FROM golang:1.24-alpine AS builder
+
+RUN apk add --no-cache build-base git
+
+WORKDIR /src
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source and build CLI
+COPY . .
+RUN CGO_ENABLED=1 CGO_CFLAGS="-D_LARGEFILE64_SOURCE" GOOS=linux go build \
+    -ldflags "-s -w -X main.buildVersion=docker" \
+    -o /out/twitch .
+
+# ---------------------------------------
+# Stage 2: Minimal runtime image
+# ---------------------------------------
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates tzdata
+
+# Create dedicated non-root user and home directory
+RUN addgroup -S twitch && adduser -S twitch -G twitch -h /home/twitch \
+    && mkdir -p /home/twitch/.twitch-cli \
+    && chown -R twitch:twitch /home/twitch
+
+USER twitch
+WORKDIR /home/twitch
+
+COPY --from=builder --chown=twitch:twitch /out/twitch /usr/local/bin/twitch
+
+# Default mock-api port
+EXPOSE 8080
+
+# Persist the mock SQLite database if mounted
+VOLUME ["/home/twitch/.twitch-cli"]
+
+# Health check using the unauthenticated /units/users endpoint
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://localhost:8080/units/users || exit 1
+
+ENTRYPOINT ["/usr/local/bin/twitch"]
+CMD ["mock-api", "start", "-p", "8080"]

@@ -1,0 +1,15 @@
+services:
+  twitch-mock-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock-api
+    image: twitch-mock-api:local
+    container_name: twitch-mock-api
+    ports:
+      - "8080:8080"
+    volumes:
+      - twitch-mock-data:/home/twitch/.twitch-cli
+    restart: unless-stopped
+
+volumes:
+  twitch-mock-data:
